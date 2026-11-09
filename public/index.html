@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SpeedoTime</title>
-<meta name="description" content="A speedometer that shows how long a trip takes at each speed, and how much time going faster really saves.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M10 70a40 40 0 0 1 80 0' fill='none' stroke='%23ff7a1a' stroke-width='10'/><line x1='50' y1='70' x2='78' y2='38' stroke='%23e33' stroke-width='8' stroke-linecap='round'/></svg>">
+<meta name="description" content="A speedometer that compares two speeds and shows how much time going faster really saves.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M10 70a40 40 0 0 1 80 0' fill='none' stroke='%23ff7a1a' stroke-width='10'/><line x1='50' y1='70' x2='78' y2='38' stroke='%23e33' stroke-width='8' stroke-linecap='round'/><line x1='50' y1='70' x2='28' y2='34' stroke='%235ec8ff' stroke-width='8' stroke-linecap='round'/></svg>">
 <style>
   :root {
     --bg: #0b0d10;
@@ -17,8 +17,8 @@
     --accent: #ff7a1a;
     --good: #3ddc84;
     --bad: #ff4d4d;
-    --needle: #ff3b30;
-    --face: #0f1216;
+    --a: #ff3b30;
+    --b: #5ec8ff;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
@@ -35,9 +35,10 @@
   svg.gauge.dragging { cursor: grabbing; }
   .tick-label { fill: var(--text); font-size: 15px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
   .time-label { fill: var(--accent); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; font-variant-numeric: tabular-nums; }
-  .lcd-speed { fill: var(--text); font-size: 46px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
-  .lcd-unit { fill: var(--muted); font-size: 12px; text-anchor: middle; letter-spacing: .15em; }
-  .lcd-time { fill: var(--accent); font-size: 22px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .lcd-speed { font-size: 38px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .lcd-sub { font-size: 13px; font-weight: 600; text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .lcd-k { fill: var(--muted); font-size: 10px; text-anchor: middle; letter-spacing: .15em; }
+  .lcd-saved { fill: var(--good); font-size: 22px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
   .legend { display: flex; justify-content: center; gap: 18px; font-size: .78rem; color: var(--muted); padding: 2px 0 8px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 
@@ -45,16 +46,22 @@
   @media (max-width: 560px) { .controls { grid-template-columns: 1fr 1fr; } .controls .wide { grid-column: span 2; } }
   .field { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
   .field label { display: block; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+  .field label .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
   .field .row { display: flex; gap: 6px; align-items: center; }
   input[type=number], select { width: 100%; min-width: 0; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 10px; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
   select { width: auto; min-width: 64px; }
   input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  input[type=range] { width: 100%; accent-color: var(--accent); margin-top: 14px; }
+  input[type=range] { width: 100%; margin-top: 10px; }
+  #range-a, #speed-a { accent-color: var(--a); }
+  #range-b, #speed-b { accent-color: var(--b); }
 
-  .results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
   @media (max-width: 560px) { .results { grid-template-columns: 1fr; } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card.a { border-top: 3px solid var(--a); }
+  .card.b { border-top: 3px solid var(--b); }
+  .card.d { border-top: 3px solid var(--good); }
   .card .k { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
   .card .v { font-size: 1.5rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .card .s { font-size: .82rem; color: var(--muted); margin-top: 2px; }
@@ -65,8 +72,10 @@
   th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); }
   th:first-child, td:first-child { text-align: left; }
   th { color: var(--muted); font-weight: 500; font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
-  tr.current td { background: rgba(255,122,26,.12); }
-  tr.base td { background: rgba(255,255,255,.04); }
+  tr.row-a td { background: rgba(255,59,48,.14); }
+  tr.row-b td { background: rgba(94,200,255,.12); }
+  tr.row-a td:first-child { box-shadow: inset 3px 0 var(--a); }
+  tr.row-b td:first-child { box-shadow: inset 3px 0 var(--b); }
   .table-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .note { color: var(--muted); font-size: .85rem; line-height: 1.5; margin-top: 16px; }
   .note b { color: var(--text); }
@@ -76,11 +85,11 @@
 <main>
   <header>
     <h1>Speedo<span>Time</span></h1>
-    <p>Set a distance, then drag the needle. The orange numbers around the outside of the dial show how long the trip takes at each speed.</p>
+    <p>Set a distance, then drag the <b style="color:var(--a)">red</b> and <b style="color:var(--b)">blue</b> needles to compare two speeds. The orange numbers around the dial show the trip time at each speed.</p>
   </header>
 
   <div class="gauge-wrap">
-    <svg class="gauge" id="gauge" viewBox="-38 -8 476 248" aria-label="Speedometer">
+    <svg class="gauge" id="gauge" viewBox="-38 -8 476 248" aria-label="Speedometer with two needles">
       <defs>
         <radialGradient id="face" cx="50%" cy="100%" r="90%">
           <stop offset="0%" stop-color="#1a1f26"/>
@@ -96,34 +105,41 @@
           <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
       </defs>
-      <!-- bezel + face -->
       <path id="bezel" fill="url(#chrome)"/>
       <path id="face-path" fill="url(#face)"/>
       <g id="zones"></g>
-      <path id="progress" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="butt" opacity=".9" filter="url(#glow)"/>
+      <!-- the gap between the two speeds -->
+      <path id="gap" fill="none" stroke="var(--good)" stroke-width="8" opacity=".9" filter="url(#glow)"/>
       <g id="ticks"></g>
       <g id="times"></g>
-      <g id="base-marker"></g>
       <!-- digital readout -->
-      <text class="lcd-speed" id="lcd-speed" x="200" y="178">0</text>
-      <text class="lcd-unit" x="200" y="194">MPH</text>
-      <text class="lcd-time" id="lcd-time" x="200" y="140">--</text>
-      <!-- needle -->
-      <g id="needle">
-        <polygon points="-4,0 0,-158 4,0 0,22" fill="var(--needle)" filter="url(#glow)"/>
+      <text class="lcd-k" x="200" y="112" id="lcd-saved-k">TIME SAVED</text>
+      <text class="lcd-saved" id="lcd-saved" x="200" y="136">--</text>
+      <text class="lcd-speed" id="lcd-a" x="148" y="182" fill="var(--a)">0</text>
+      <text class="lcd-sub" id="lcd-ta" x="148" y="200" fill="var(--a)">--</text>
+      <text class="lcd-speed" id="lcd-b" x="252" y="182" fill="var(--b)">0</text>
+      <text class="lcd-sub" id="lcd-tb" x="252" y="200" fill="var(--b)">--</text>
+      <text class="lcd-k" x="200" y="178">MPH</text>
+      <!-- needles (B behind A) -->
+      <g id="needle-b">
+        <polygon points="-4,0 0,-158 4,0 0,22" fill="var(--b)" filter="url(#glow)"/>
+      </g>
+      <g id="needle-a">
+        <polygon points="-4,0 0,-158 4,0 0,22" fill="var(--a)" filter="url(#glow)"/>
       </g>
       <circle cx="200" cy="215" r="13" fill="url(#chrome)" stroke="#000" stroke-width="1"/>
       <circle cx="200" cy="215" r="4" fill="#111"/>
     </svg>
     <div class="legend">
-      <span><i style="background:var(--accent)"></i>Trip time at that speed (outer ring)</span>
-      <span><i style="background:#5ec8ff"></i>Your baseline speed</span>
-      <span><i style="background:var(--bad)"></i>Red line</span>
+      <span><i style="background:var(--a)"></i>Speed A</span>
+      <span><i style="background:var(--b)"></i>Speed B</span>
+      <span><i style="background:var(--good)"></i>Gap between them</span>
+      <span><i style="background:var(--accent)"></i>Trip time at that speed</span>
     </div>
   </div>
 
   <div class="controls">
-    <div class="field">
+    <div class="field wide">
       <label for="distance">Distance</label>
       <div class="row">
         <input id="distance" type="number" min="0" step="any" value="100" inputmode="decimal">
@@ -134,26 +150,27 @@
       </div>
     </div>
     <div class="field">
-      <label for="base">Baseline speed (mph)</label>
-      <input id="base" type="number" min="1" max="150" step="1" value="60" inputmode="numeric">
+      <label for="speed-a"><span class="dot" style="background:var(--a)"></span>Speed A (mph)</label>
+      <input id="speed-a" type="number" min="0" max="150" step="1" value="80" inputmode="numeric">
+      <input id="range-a" type="range" min="0" max="150" step="1" value="80" aria-label="Speed A slider">
     </div>
-    <div class="field wide">
-      <label for="speed">Your speed (mph)</label>
-      <input id="speed" type="number" min="0" max="150" step="1" value="70" inputmode="numeric">
+    <div class="field">
+      <label for="speed-b"><span class="dot" style="background:var(--b)"></span>Speed B (mph)</label>
+      <input id="speed-b" type="number" min="0" max="150" step="1" value="70" inputmode="numeric">
+      <input id="range-b" type="range" min="0" max="150" step="1" value="70" aria-label="Speed B slider">
     </div>
   </div>
-  <input id="speed-range" type="range" min="0" max="150" step="1" value="70" aria-label="Speed slider">
 
   <div class="results">
-    <div class="card"><div class="k">Trip time at <span id="r-speed">70</span> mph</div><div class="v" id="r-time">--</div><div class="s" id="r-arrive"></div></div>
-    <div class="card"><div class="k">At baseline <span id="r-base">60</span> mph</div><div class="v" id="r-btime">--</div><div class="s">for comparison</div></div>
-    <div class="card"><div class="k" id="r-diff-k">Time saved</div><div class="v" id="r-diff">--</div><div class="s" id="r-diff-s"></div></div>
+    <div class="card a"><div class="k">Speed A · <span id="r-a">80</span> mph</div><div class="v" id="r-ta">--</div><div class="s" id="r-arr-a"></div></div>
+    <div class="card b"><div class="k">Speed B · <span id="r-b">70</span> mph</div><div class="v" id="r-tb">--</div><div class="s" id="r-arr-b"></div></div>
+    <div class="card d"><div class="k" id="r-diff-k">Time saved</div><div class="v good" id="r-diff">--</div><div class="s" id="r-diff-s"></div></div>
   </div>
 
-  <h2>Every 10 mph, compared with your baseline</h2>
+  <h2>Every 10 mph, compared with the slower speed (<span id="t-ref">70</span> mph)</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Speed</th><th>Trip time</th><th>vs baseline</th><th>Gain from last +10</th></tr></thead>
+      <thead><tr><th>Speed</th><th>Trip time</th><th>vs <span id="t-ref2">70</span> mph</th><th>Gain from last +10</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -163,8 +180,8 @@
     overestimate the time saved by speeding up from an already high speed, and
     underestimate the time saved by speeding up from a low one. Going 30 → 40 mph
     saves far more than 70 → 80 mph over the same distance, because trip time is
-    distance ÷ speed, a curve that flattens out. Watch the orange numbers on the dial
-    bunch together as the needle climbs.
+    distance ÷ speed, a curve that flattens out. Put the two needles 10 mph apart
+    and slide them up the dial together to watch the saving shrink.
   </p>
 </main>
 
@@ -186,9 +203,9 @@
   };
   const arcPath = (s0, s1, r) => {
     const [x0, y0] = pt(s0, r), [x1, y1] = pt(s1, r);
-    const large = (s1 - s0) / MAX > 1 ? 1 : 0;
-    return `M${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+    return `M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}`;
   };
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
   // ---- static dial ----
   const half = r => `M${CX - r} ${CY} A${r} ${r} 0 0 1 ${CX + r} ${CY} Z`;
@@ -215,7 +232,7 @@
   }
 
   // ---- state ----
-  const state = { speed: 70, base: 60, miles: 100 };
+  const state = { a: 80, b: 70, miles: 100 };
 
   const fmt = hours => {
     if (!isFinite(hours) || hours < 0) return '—';
@@ -241,71 +258,80 @@
     return fmt(Math.abs(hours));
   };
   const tripHours = s => s > 0 ? state.miles / s : Infinity;
+  const arrival = h => isFinite(h)
+    ? 'Leave now, arrive ' + new Date(Date.now() + h * 3600e3).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    : 'Not moving';
 
   function renderTimes() {
     const g = $('times');
     g.textContent = '';
     for (let s = 10; s <= MAX; s += 10) {
       const [x, y] = pt(s, R + 30);
-      const t = el('text', { x, y, class: 'time-label' }, g);
-      t.textContent = fmtShort(tripHours(s));
+      el('text', { x, y, class: 'time-label' }, g).textContent = fmtShort(tripHours(s));
     }
-  }
-
-  function renderBase() {
-    const g = $('base-marker');
-    g.textContent = '';
-    const s = state.base;
-    if (!(s > 0 && s <= MAX)) return;
-    const [x0, y0] = pt(s, R + 3), [x1, y1] = pt(s, R - 14);
-    el('line', { x1: x0, y1: y0, x2: x1, y2: y1, stroke: '#5ec8ff', 'stroke-width': 4, 'stroke-linecap': 'round' }, g);
   }
 
   function render() {
-    const { speed, base, miles } = state;
-    $('needle').setAttribute('transform', `translate(${CX} ${CY}) rotate(${(speed / MAX) * 180 - 90})`);
-    $('progress').setAttribute('d', speed > 0 ? arcPath(0, speed, R - 6) : '');
-    $('progress').setAttribute('stroke', speed >= 120 ? 'var(--bad)' : 'var(--accent)');
-    $('lcd-speed').textContent = Math.round(speed);
-    const t = tripHours(speed), bt = tripHours(base);
-    $('lcd-time').textContent = miles > 0 ? fmt(t) : '--';
+    const { a, b, miles } = state;
+    const rot = s => `translate(${CX} ${CY}) rotate(${(s / MAX) * 180 - 90})`;
+    $('needle-a').setAttribute('transform', rot(a));
+    $('needle-b').setAttribute('transform', rot(b));
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    $('gap').setAttribute('d', hi - lo >= 0.5 ? arcPath(lo, hi, R - 6) : '');
 
-    $('r-speed').textContent = Math.round(speed);
-    $('r-base').textContent = base;
-    $('r-time').textContent = fmt(t);
-    $('r-btime').textContent = fmt(bt);
-    if (isFinite(t)) {
-      const arr = new Date(Date.now() + t * 3600e3);
-      $('r-arrive').textContent = 'Leave now, arrive ' + arr.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-    } else $('r-arrive').textContent = 'You are not moving';
+    const ta = tripHours(a), tb = tripHours(b);
+    const tFast = tripHours(hi), tSlow = tripHours(lo);
+    const saved = tSlow - tFast;
 
-    const diff = bt - t, dk = $('r-diff-k'), dv = $('r-diff'), ds = $('r-diff-s');
-    if (!isFinite(diff) || !isFinite(bt)) { dk.textContent = 'Time saved'; dv.textContent = '—'; dv.className = 'v'; ds.textContent = ''; }
-    else if (Math.abs(diff) < 1 / 3600) { dk.textContent = 'Time saved'; dv.textContent = '0'; dv.className = 'v'; ds.textContent = 'same as baseline'; }
-    else if (diff > 0) {
-      dk.textContent = 'Time saved'; dv.textContent = fmtDiff(diff); dv.className = 'v good';
-      ds.textContent = `${(diff / bt * 100).toFixed(1)}% faster for ${Math.round((speed / base - 1) * 100)}% more speed`;
+    $('lcd-a').textContent = Math.round(a);
+    $('lcd-b').textContent = Math.round(b);
+    $('lcd-ta').textContent = miles > 0 ? fmt(ta) : '--';
+    $('lcd-tb').textContent = miles > 0 ? fmt(tb) : '--';
+
+    $('r-a').textContent = Math.round(a);
+    $('r-b').textContent = Math.round(b);
+    $('r-ta').textContent = fmt(ta);
+    $('r-tb').textContent = fmt(tb);
+    $('r-arr-a').textContent = arrival(ta);
+    $('r-arr-b').textContent = arrival(tb);
+
+    const dk = $('r-diff-k'), dv = $('r-diff'), ds = $('r-diff-s');
+    if (!(miles > 0)) {
+      dk.textContent = 'Time saved'; dv.textContent = '—'; ds.textContent = 'Enter a distance';
+      $('lcd-saved').textContent = '--';
+    } else if (hi - lo < 0.5) {
+      dk.textContent = 'Time saved'; dv.textContent = '0'; ds.textContent = 'Both needles at the same speed';
+      $('lcd-saved').textContent = '0';
+    } else if (!isFinite(saved)) {
+      dk.textContent = 'Time saved'; dv.textContent = '∞';
+      ds.textContent = `At 0 mph you never arrive`;
+      $('lcd-saved').textContent = '∞';
     } else {
-      dk.textContent = 'Time lost'; dv.textContent = fmtDiff(diff); dv.className = 'v bad';
-      ds.textContent = `${(-diff / bt * 100).toFixed(1)}% slower than baseline`;
+      const faster = a > b ? 'A' : 'B';
+      dk.textContent = `Time saved by speed ${faster}`;
+      dv.textContent = fmtDiff(saved);
+      ds.textContent = `${Math.round((hi / lo - 1) * 100)}% more speed → ${(saved / tSlow * 100).toFixed(1)}% less time`;
+      $('lcd-saved').textContent = fmtDiff(saved);
     }
 
-    $('speed').value = Math.round(speed);
-    $('speed-range').value = Math.round(speed);
-    renderTable();
+    $('speed-a').value = Math.round(a); $('range-a').value = Math.round(a);
+    $('speed-b').value = Math.round(b); $('range-b').value = Math.round(b);
+    renderTable(lo);
   }
 
-  function renderTable() {
-    const tb = $('tbody'), bt = tripHours(state.base);
-    const cur = Math.round(state.speed / 10) * 10, base = Math.round(state.base / 10) * 10;
+  function renderTable(ref) {
+    const tb = $('tbody'), tRef = tripHours(ref);
+    $('t-ref').textContent = Math.round(ref);
+    $('t-ref2').textContent = Math.round(ref);
+    const ra = Math.round(state.a / 10) * 10, rb = Math.round(state.b / 10) * 10;
     let html = '';
     for (let s = 10; s <= MAX; s += 10) {
       const t = tripHours(s), prev = s > 10 ? tripHours(s - 10) : null;
-      const d = bt - t;
+      const d = tRef - t;
       let vs = '—';
       if (isFinite(d)) vs = Math.abs(d) < 1 / 120 ? '±0' : `<span class="${d > 0 ? 'good' : 'bad'}">${d > 0 ? '−' : '+'}${fmtDiff(d)}</span>`;
       const gain = prev ? `−${fmtDiff(prev - t)}` : '';
-      const cls = s === cur ? 'current' : (s === base ? 'base' : '');
+      const cls = s === ra ? 'row-a' : (s === rb ? 'row-b' : '');
       html += `<tr class="${cls}"><td>${s} mph</td><td>${fmt(t)}</td><td>${vs}</td><td>${gain}</td></tr>`;
     }
     tb.innerHTML = html;
@@ -313,27 +339,24 @@
 
   function readDistance() {
     const v = parseFloat($('distance').value);
-    const unit = $('dist-unit').value;
-    state.miles = v > 0 ? (unit === 'km' ? v / KM_PER_MI : v) : 0;
+    state.miles = v > 0 ? ($('dist-unit').value === 'km' ? v / KM_PER_MI : v) : 0;
   }
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
   // ---- inputs ----
-  $('distance').addEventListener('input', () => { readDistance(); renderTimes(); render(); save(); });
-  $('dist-unit').addEventListener('change', () => { readDistance(); renderTimes(); render(); save(); });
-  $('base').addEventListener('input', () => {
-    const v = parseFloat($('base').value);
-    if (v > 0) { state.base = clamp(Math.round(v), 1, MAX); renderBase(); render(); save(); }
-  });
-  $('speed').addEventListener('input', () => {
-    const v = parseFloat($('speed').value);
-    if (v >= 0) { state.speed = clamp(v, 0, MAX); render(); save(); }
-  });
-  $('speed-range').addEventListener('input', e => { state.speed = +e.target.value; render(); save(); });
+  const onDist = () => { readDistance(); renderTimes(); render(); save(); };
+  $('distance').addEventListener('input', onDist);
+  $('dist-unit').addEventListener('change', onDist);
+  for (const k of ['a', 'b']) {
+    $('speed-' + k).addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      if (v >= 0) { state[k] = clamp(v, 0, MAX); render(); save(); }
+    });
+    $('range-' + k).addEventListener('input', e => { state[k] = +e.target.value; render(); save(); });
+  }
 
-  // ---- drag the needle ----
+  // ---- drag the needles: grab whichever is closest to where you touch ----
   const svg = $('gauge');
-  let dragging = false;
+  let active = null;
   function speedFromEvent(e) {
     const p = svg.createSVGPoint();
     p.x = e.clientX; p.y = e.clientY;
@@ -343,28 +366,34 @@
     return clamp(Math.round(MAX * (1 - a / Math.PI)), 0, MAX);
   }
   svg.addEventListener('pointerdown', e => {
-    dragging = true; svg.classList.add('dragging'); svg.setPointerCapture(e.pointerId);
-    state.speed = speedFromEvent(e); render();
+    const s = speedFromEvent(e);
+    const da = Math.abs(s - state.a), db = Math.abs(s - state.b);
+    // if the needles overlap, pick by direction later; default to A
+    active = da < db ? 'a' : db < da ? 'b' : (s >= state.a ? 'a' : 'b');
+    svg.classList.add('dragging'); svg.setPointerCapture(e.pointerId);
+    state[active] = s; render();
   });
-  svg.addEventListener('pointermove', e => { if (dragging) { state.speed = speedFromEvent(e); render(); } });
-  const end = () => { if (dragging) { dragging = false; svg.classList.remove('dragging'); save(); } };
+  svg.addEventListener('pointermove', e => { if (active) { state[active] = speedFromEvent(e); render(); } });
+  const end = () => { if (active) { active = null; svg.classList.remove('dragging'); save(); } };
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
 
-  // ---- remember last settings (optional) ----
+  // ---- remember last settings (per browser, optional) ----
   function save() {
-    try { localStorage.setItem('speedotime', JSON.stringify({ d: $('distance').value, u: $('dist-unit').value, b: state.base, s: state.speed })); } catch {}
+    try { localStorage.setItem('speedotime', JSON.stringify({ d: $('distance').value, u: $('dist-unit').value, a: state.a, b: state.b })); } catch {}
   }
   try {
     const saved = JSON.parse(localStorage.getItem('speedotime') || 'null');
     if (saved) {
-      $('distance').value = saved.d; $('dist-unit').value = saved.u === 'km' ? 'km' : 'mi';
-      if (saved.b > 0) { state.base = clamp(saved.b, 1, MAX); $('base').value = state.base; }
-      if (saved.s >= 0) state.speed = clamp(saved.s, 0, MAX);
+      if (saved.d) $('distance').value = saved.d;
+      $('dist-unit').value = saved.u === 'km' ? 'km' : 'mi';
+      const a = saved.a ?? saved.s;            // older versions stored s (speed) and b (baseline)
+      if (a >= 0) state.a = clamp(a, 0, MAX);
+      if (saved.b >= 0) state.b = clamp(saved.b, 0, MAX);
     }
   } catch {}
 
-  readDistance(); renderTimes(); renderBase(); render();
+  readDistance(); renderTimes(); render();
 })();
 </script>
 </body>
