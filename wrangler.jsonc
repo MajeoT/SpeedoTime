@@ -1,0 +1,10 @@
+{
+  // Static site served by Cloudflare Workers (static assets).
+  // Deploy:  npx wrangler deploy
+  // Local:   npx wrangler dev
+  "name": "speedotime",
+  "compatibility_date": "2025-10-01",
+  "assets": {
+    "directory": "./public"
+  }
+}

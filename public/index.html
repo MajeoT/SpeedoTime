@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpeedoTime</title>
+<meta name="description" content="A speedometer that shows how long a trip takes at each speed, and how much time going faster really saves.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M10 70a40 40 0 0 1 80 0' fill='none' stroke='%23ff7a1a' stroke-width='10'/><line x1='50' y1='70' x2='78' y2='38' stroke='%23e33' stroke-width='8' stroke-linecap='round'/></svg>">
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --panel-2: #1b2027;
+    --line: #2a313a;
+    --text: #e8edf2;
+    --muted: #8b96a3;
+    --accent: #ff7a1a;
+    --good: #3ddc84;
+    --bad: #ff4d4d;
+    --needle: #ff3b30;
+    --face: #0f1216;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { min-height: 100vh; display: flex; justify-content: center; }
+  main { width: 100%; max-width: 760px; padding: 24px 16px 48px; }
+  header h1 { margin: 0; font-size: 1.6rem; letter-spacing: .02em; }
+  header h1 span { color: var(--accent); }
+  header p { margin: 4px 0 20px; color: var(--muted); font-size: .95rem; }
+
+  .gauge-wrap { background: radial-gradient(ellipse at 50% 100%, #1c222a 0%, var(--panel) 70%);
+    border: 1px solid var(--line); border-radius: 20px; padding: 12px 12px 4px; }
+  svg.gauge { width: 100%; height: auto; display: block; touch-action: none; user-select: none; cursor: grab; }
+  svg.gauge.dragging { cursor: grabbing; }
+  .tick-label { fill: var(--text); font-size: 15px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+  .time-label { fill: var(--accent); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; font-variant-numeric: tabular-nums; }
+  .lcd-speed { fill: var(--text); font-size: 46px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .lcd-unit { fill: var(--muted); font-size: 12px; text-anchor: middle; letter-spacing: .15em; }
+  .lcd-time { fill: var(--accent); font-size: 22px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; justify-content: center; gap: 18px; font-size: .78rem; color: var(--muted); padding: 2px 0 8px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+  .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+  @media (max-width: 560px) { .controls { grid-template-columns: 1fr 1fr; } .controls .wide { grid-column: span 2; } }
+  .field { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .field label { display: block; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+  .field .row { display: flex; gap: 6px; align-items: center; }
+  input[type=number], select { width: 100%; min-width: 0; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  select { width: auto; min-width: 64px; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin-top: 14px; }
+
+  .results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  @media (max-width: 560px) { .results { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card .k { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .card .v { font-size: 1.5rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card .s { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+  .good { color: var(--good); } .bad { color: var(--bad); }
+
+  h2 { font-size: 1rem; margin: 28px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .92rem; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+  tr.current td { background: rgba(255,122,26,.12); }
+  tr.base td { background: rgba(255,255,255,.04); }
+  .table-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .note { color: var(--muted); font-size: .85rem; line-height: 1.5; margin-top: 16px; }
+  .note b { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Speedo<span>Time</span></h1>
+    <p>Set a distance, then drag the needle. The orange numbers around the outside of the dial show how long the trip takes at each speed.</p>
+  </header>
+
+  <div class="gauge-wrap">
+    <svg class="gauge" id="gauge" viewBox="-38 -8 476 248" aria-label="Speedometer">
+      <defs>
+        <radialGradient id="face" cx="50%" cy="100%" r="90%">
+          <stop offset="0%" stop-color="#1a1f26"/>
+          <stop offset="100%" stop-color="#0c0f13"/>
+        </radialGradient>
+        <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#9aa4ae"/>
+          <stop offset="50%" stop-color="#3b434c"/>
+          <stop offset="100%" stop-color="#1b2027"/>
+        </linearGradient>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2.5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <!-- bezel + face -->
+      <path id="bezel" fill="url(#chrome)"/>
+      <path id="face-path" fill="url(#face)"/>
+      <g id="zones"></g>
+      <path id="progress" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="butt" opacity=".9" filter="url(#glow)"/>
+      <g id="ticks"></g>
+      <g id="times"></g>
+      <g id="base-marker"></g>
+      <!-- digital readout -->
+      <text class="lcd-speed" id="lcd-speed" x="200" y="178">0</text>
+      <text class="lcd-unit" x="200" y="194">MPH</text>
+      <text class="lcd-time" id="lcd-time" x="200" y="140">--</text>
+      <!-- needle -->
+      <g id="needle">
+        <polygon points="-4,0 0,-158 4,0 0,22" fill="var(--needle)" filter="url(#glow)"/>
+      </g>
+      <circle cx="200" cy="215" r="13" fill="url(#chrome)" stroke="#000" stroke-width="1"/>
+      <circle cx="200" cy="215" r="4" fill="#111"/>
+    </svg>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>Trip time at that speed (outer ring)</span>
+      <span><i style="background:#5ec8ff"></i>Your baseline speed</span>
+      <span><i style="background:var(--bad)"></i>Red line</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="distance">Distance</label>
+      <div class="row">
+        <input id="distance" type="number" min="0" step="any" value="100" inputmode="decimal">
+        <select id="dist-unit" aria-label="Distance unit">
+          <option value="mi">mi</option>
+          <option value="km">km</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="base">Baseline speed (mph)</label>
+      <input id="base" type="number" min="1" max="150" step="1" value="60" inputmode="numeric">
+    </div>
+    <div class="field wide">
+      <label for="speed">Your speed (mph)</label>
+      <input id="speed" type="number" min="0" max="150" step="1" value="70" inputmode="numeric">
+    </div>
+  </div>
+  <input id="speed-range" type="range" min="0" max="150" step="1" value="70" aria-label="Speed slider">
+
+  <div class="results">
+    <div class="card"><div class="k">Trip time at <span id="r-speed">70</span> mph</div><div class="v" id="r-time">--</div><div class="s" id="r-arrive"></div></div>
+    <div class="card"><div class="k">At baseline <span id="r-base">60</span> mph</div><div class="v" id="r-btime">--</div><div class="s">for comparison</div></div>
+    <div class="card"><div class="k" id="r-diff-k">Time saved</div><div class="v" id="r-diff">--</div><div class="s" id="r-diff-s"></div></div>
+  </div>
+
+  <h2>Every 10 mph, compared with your baseline</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Speed</th><th>Trip time</th><th>vs baseline</th><th>Gain from last +10</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <p class="note">
+    <b>Why this exists:</b> psychologists call it the <b>time-saving bias</b>. People
+    overestimate the time saved by speeding up from an already high speed, and
+    underestimate the time saved by speeding up from a low one. Going 30 → 40 mph
+    saves far more than 70 → 80 mph over the same distance, because trip time is
+    distance ÷ speed, a curve that flattens out. Watch the orange numbers on the dial
+    bunch together as the needle climbs.
+  </p>
+</main>
+
+<script>
+(() => {
+  const MAX = 150, CX = 200, CY = 215, R = 180;
+  const KM_PER_MI = 1.609344;
+  const $ = id => document.getElementById(id);
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  // speed -> angle (radians), 0 mph on the left, 150 mph on the right
+  const ang = s => Math.PI * (1 - s / MAX);
+  const pt = (s, r) => [CX + r * Math.cos(ang(s)), CY - r * Math.sin(ang(s))];
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(svgNS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const arcPath = (s0, s1, r) => {
+    const [x0, y0] = pt(s0, r), [x1, y1] = pt(s1, r);
+    const large = (s1 - s0) / MAX > 1 ? 1 : 0;
+    return `M${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+  };
+
+  // ---- static dial ----
+  const half = r => `M${CX - r} ${CY} A${r} ${r} 0 0 1 ${CX + r} ${CY} Z`;
+  $('bezel').setAttribute('d', half(R + 12));
+  $('face-path').setAttribute('d', half(R + 4));
+
+  const zones = $('zones');
+  el('path', { d: arcPath(0, 120, R - 6), stroke: '#39424c', 'stroke-width': 6, fill: 'none' }, zones);
+  el('path', { d: arcPath(120, 150, R - 6), stroke: 'var(--bad)', 'stroke-width': 6, fill: 'none', opacity: .85 }, zones);
+
+  const ticks = $('ticks');
+  for (let s = 0; s <= MAX; s += 2) {
+    const major = s % 10 === 0;
+    const len = major ? 18 : 7;
+    const [x0, y0] = pt(s, R - 10), [x1, y1] = pt(s, R - 10 - len);
+    el('line', { x1: x0, y1: y0, x2: x1, y2: y1,
+      stroke: s >= 120 ? 'var(--bad)' : '#cfd6dd', 'stroke-width': major ? 3 : 1.2, 'stroke-linecap': 'round' }, ticks);
+    if (major) {
+      const [lx, ly] = pt(s, R - 42);
+      const t = el('text', { x: lx, y: ly, class: 'tick-label' }, ticks);
+      if (s >= 120) t.setAttribute('fill', 'var(--bad)');
+      t.textContent = s;
+    }
+  }
+
+  // ---- state ----
+  const state = { speed: 70, base: 60, miles: 100 };
+
+  const fmt = hours => {
+    if (!isFinite(hours) || hours < 0) return '—';
+    const totalMin = Math.round(hours * 60);
+    const d = Math.floor(totalMin / 1440), h = Math.floor((totalMin % 1440) / 60), m = totalMin % 60;
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+    if (hours * 60 < 1) return `${Math.round(hours * 3600)}s`;
+    return `${m} min`;
+  };
+  const fmtShort = hours => {
+    if (!isFinite(hours)) return '∞';
+    const min = hours * 60;
+    if (min < 1) return `${Math.round(min * 60)}s`;
+    if (min < 60) return `${Math.round(min)}m`;
+    if (hours < 10) { const h = Math.floor(hours), m = Math.round(min - h * 60); return m === 60 ? `${h + 1}h` : `${h}h${String(m).padStart(2, '0')}`; }
+    if (hours < 48) return `${Math.round(hours)}h`;
+    return `${Math.round(hours / 24)}d`;
+  };
+  const fmtDiff = hours => {
+    const a = Math.abs(hours) * 60;
+    if (a < 1) return `${Math.round(a * 60)} s`;
+    return fmt(Math.abs(hours));
+  };
+  const tripHours = s => s > 0 ? state.miles / s : Infinity;
+
+  function renderTimes() {
+    const g = $('times');
+    g.textContent = '';
+    for (let s = 10; s <= MAX; s += 10) {
+      const [x, y] = pt(s, R + 30);
+      const t = el('text', { x, y, class: 'time-label' }, g);
+      t.textContent = fmtShort(tripHours(s));
+    }
+  }
+
+  function renderBase() {
+    const g = $('base-marker');
+    g.textContent = '';
+    const s = state.base;
+    if (!(s > 0 && s <= MAX)) return;
+    const [x0, y0] = pt(s, R + 3), [x1, y1] = pt(s, R - 14);
+    el('line', { x1: x0, y1: y0, x2: x1, y2: y1, stroke: '#5ec8ff', 'stroke-width': 4, 'stroke-linecap': 'round' }, g);
+  }
+
+  function render() {
+    const { speed, base, miles } = state;
+    $('needle').setAttribute('transform', `translate(${CX} ${CY}) rotate(${(speed / MAX) * 180 - 90})`);
+    $('progress').setAttribute('d', speed > 0 ? arcPath(0, speed, R - 6) : '');
+    $('progress').setAttribute('stroke', speed >= 120 ? 'var(--bad)' : 'var(--accent)');
+    $('lcd-speed').textContent = Math.round(speed);
+    const t = tripHours(speed), bt = tripHours(base);
+    $('lcd-time').textContent = miles > 0 ? fmt(t) : '--';
+
+    $('r-speed').textContent = Math.round(speed);
+    $('r-base').textContent = base;
+    $('r-time').textContent = fmt(t);
+    $('r-btime').textContent = fmt(bt);
+    if (isFinite(t)) {
+      const arr = new Date(Date.now() + t * 3600e3);
+      $('r-arrive').textContent = 'Leave now, arrive ' + arr.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    } else $('r-arrive').textContent = 'You are not moving';
+
+    const diff = bt - t, dk = $('r-diff-k'), dv = $('r-diff'), ds = $('r-diff-s');
+    if (!isFinite(diff) || !isFinite(bt)) { dk.textContent = 'Time saved'; dv.textContent = '—'; dv.className = 'v'; ds.textContent = ''; }
+    else if (Math.abs(diff) < 1 / 3600) { dk.textContent = 'Time saved'; dv.textContent = '0'; dv.className = 'v'; ds.textContent = 'same as baseline'; }
+    else if (diff > 0) {
+      dk.textContent = 'Time saved'; dv.textContent = fmtDiff(diff); dv.className = 'v good';
+      ds.textContent = `${(diff / bt * 100).toFixed(1)}% faster for ${Math.round((speed / base - 1) * 100)}% more speed`;
+    } else {
+      dk.textContent = 'Time lost'; dv.textContent = fmtDiff(diff); dv.className = 'v bad';
+      ds.textContent = `${(-diff / bt * 100).toFixed(1)}% slower than baseline`;
+    }
+
+    $('speed').value = Math.round(speed);
+    $('speed-range').value = Math.round(speed);
+    renderTable();
+  }
+
+  function renderTable() {
+    const tb = $('tbody'), bt = tripHours(state.base);
+    const cur = Math.round(state.speed / 10) * 10, base = Math.round(state.base / 10) * 10;
+    let html = '';
+    for (let s = 10; s <= MAX; s += 10) {
+      const t = tripHours(s), prev = s > 10 ? tripHours(s - 10) : null;
+      const d = bt - t;
+      let vs = '—';
+      if (isFinite(d)) vs = Math.abs(d) < 1 / 120 ? '±0' : `<span class="${d > 0 ? 'good' : 'bad'}">${d > 0 ? '−' : '+'}${fmtDiff(d)}</span>`;
+      const gain = prev ? `−${fmtDiff(prev - t)}` : '';
+      const cls = s === cur ? 'current' : (s === base ? 'base' : '');
+      html += `<tr class="${cls}"><td>${s} mph</td><td>${fmt(t)}</td><td>${vs}</td><td>${gain}</td></tr>`;
+    }
+    tb.innerHTML = html;
+  }
+
+  function readDistance() {
+    const v = parseFloat($('distance').value);
+    const unit = $('dist-unit').value;
+    state.miles = v > 0 ? (unit === 'km' ? v / KM_PER_MI : v) : 0;
+  }
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  // ---- inputs ----
+  $('distance').addEventListener('input', () => { readDistance(); renderTimes(); render(); save(); });
+  $('dist-unit').addEventListener('change', () => { readDistance(); renderTimes(); render(); save(); });
+  $('base').addEventListener('input', () => {
+    const v = parseFloat($('base').value);
+    if (v > 0) { state.base = clamp(Math.round(v), 1, MAX); renderBase(); render(); save(); }
+  });
+  $('speed').addEventListener('input', () => {
+    const v = parseFloat($('speed').value);
+    if (v >= 0) { state.speed = clamp(v, 0, MAX); render(); save(); }
+  });
+  $('speed-range').addEventListener('input', e => { state.speed = +e.target.value; render(); save(); });
+
+  // ---- drag the needle ----
+  const svg = $('gauge');
+  let dragging = false;
+  function speedFromEvent(e) {
+    const p = svg.createSVGPoint();
+    p.x = e.clientX; p.y = e.clientY;
+    const loc = p.matrixTransform(svg.getScreenCTM().inverse());
+    let a = Math.atan2(CY - loc.y, loc.x - CX);           // 0 = right, π = left
+    if (a < 0) a = loc.x < CX ? Math.PI : 0;               // below centre: snap to ends
+    return clamp(Math.round(MAX * (1 - a / Math.PI)), 0, MAX);
+  }
+  svg.addEventListener('pointerdown', e => {
+    dragging = true; svg.classList.add('dragging'); svg.setPointerCapture(e.pointerId);
+    state.speed = speedFromEvent(e); render();
+  });
+  svg.addEventListener('pointermove', e => { if (dragging) { state.speed = speedFromEvent(e); render(); } });
+  const end = () => { if (dragging) { dragging = false; svg.classList.remove('dragging'); save(); } };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+
+  // ---- remember last settings (optional) ----
+  function save() {
+    try { localStorage.setItem('speedotime', JSON.stringify({ d: $('distance').value, u: $('dist-unit').value, b: state.base, s: state.speed })); } catch {}
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem('speedotime') || 'null');
+    if (saved) {
+      $('distance').value = saved.d; $('dist-unit').value = saved.u === 'km' ? 'km' : 'mi';
+      if (saved.b > 0) { state.base = clamp(saved.b, 1, MAX); $('base').value = state.base; }
+      if (saved.s >= 0) state.speed = clamp(saved.s, 0, MAX);
+    }
+  } catch {}
+
+  readDistance(); renderTimes(); renderBase(); render();
+})();
+</script>
+</body>
+</html>
