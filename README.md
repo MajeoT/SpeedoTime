@@ -17,6 +17,8 @@ from an already high speed. Trip time is distance ÷ speed, so each extra 10 mph
 - Trip time and arrival time for each speed, plus time saved by the faster one
 - Table of every 10 mph step with the time gained from each extra 10 mph
 - Remembers your last inputs in the browser
+- Installable on a phone (PWA): **Android** shows an *Install app* button; on **iPhone** tap
+  Share → *Add to Home Screen*. Works offline once opened.
 
 ## Run locally
 
