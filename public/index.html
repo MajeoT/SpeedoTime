@@ -2,10 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SpeedoTime">
 <title>SpeedoTime</title>
 <meta name="description" content="A speedometer that compares two speeds and shows how much time going faster really saves.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M10 70a40 40 0 0 1 80 0' fill='none' stroke='%23ff7a1a' stroke-width='10'/><line x1='50' y1='70' x2='78' y2='38' stroke='%23e33' stroke-width='8' stroke-linecap='round'/><line x1='50' y1='70' x2='28' y2='34' stroke='%235ec8ff' stroke-width='8' stroke-linecap='round'/></svg>">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link rel="alternate icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M10 70a40 40 0 0 1 80 0' fill='none' stroke='%23ff7a1a' stroke-width='10'/><line x1='50' y1='70' x2='78' y2='38' stroke='%23e33' stroke-width='8' stroke-linecap='round'/><line x1='50' y1='70' x2='28' y2='34' stroke='%235ec8ff' stroke-width='8' stroke-linecap='round'/></svg>">
 <style>
   :root {
     --bg: #0b0d10;
@@ -24,7 +32,16 @@
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   body { min-height: 100vh; display: flex; justify-content: center; }
-  main { width: 100%; max-width: 760px; padding: 24px 16px 48px; }
+  main { width: 100%; max-width: 760px;
+    padding: calc(24px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
+  header { position: relative; }
+  .install { position: absolute; top: 0; right: 0; background: var(--accent); color: #111; border: 0; border-radius: 999px;
+    padding: 7px 14px; font: 600 .85rem system-ui, sans-serif; cursor: pointer; }
+  .install[hidden], .ios-hint[hidden] { display: none; }
+  .ios-hint { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+    color: var(--muted); font-size: .85rem; margin: 0 0 16px; display: flex; gap: 10px; align-items: center; }
+  .ios-hint b { color: var(--text); }
+  .ios-hint button { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 1.2rem; cursor: pointer; }
   header h1 { margin: 0; font-size: 1.6rem; letter-spacing: .02em; }
   header h1 span { color: var(--accent); }
   header p { margin: 4px 0 20px; color: var(--muted); font-size: .95rem; }
@@ -85,8 +102,13 @@
 <main>
   <header>
     <h1>Speedo<span>Time</span></h1>
+    <button class="install" id="install" hidden>Install app</button>
     <p>Set a distance, then drag the <b style="color:var(--a)">red</b> and <b style="color:var(--b)">blue</b> needles to compare two speeds. The orange numbers around the dial show the trip time at each speed.</p>
   </header>
+  <div class="ios-hint" id="ios-hint" hidden>
+    <span>To install on iPhone: tap <b>Share</b> <svg width="14" height="16" viewBox="0 0 14 16" fill="none" stroke="currentColor" stroke-width="1.6" style="vertical-align:-2px"><path d="M7 1v10M3.5 4.5 7 1l3.5 3.5M2 7.5v7h10v-7"/></svg> then <b>Add to Home Screen</b>.</span>
+    <button id="ios-hint-close" aria-label="Dismiss">×</button>
+  </div>
 
   <div class="gauge-wrap">
     <svg class="gauge" id="gauge" viewBox="-38 -8 476 248" aria-label="Speedometer with two needles">
@@ -394,6 +416,32 @@
   } catch {}
 
   readDistance(); renderTimes(); render();
+
+  // ---- install as an app ----
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', e => {   // Android / Chrome / Edge
+    e.preventDefault(); deferred = e; $('install').hidden = false;
+  });
+  $('install').addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice.catch(() => {});
+    deferred = null; $('install').hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { $('install').hidden = true; });
+  // iPhone / iPad Safari has no install prompt, so show how to do it by hand
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let hintDismissed = false;
+  try { hintDismissed = localStorage.getItem('speedotime-ios-hint') === '1'; } catch {}
+  if (ios && !standalone && !hintDismissed) $('ios-hint').hidden = false;
+  $('ios-hint-close').addEventListener('click', () => {
+    $('ios-hint').hidden = true;
+    try { localStorage.setItem('speedotime-ios-hint', '1'); } catch {}
+  });
 })();
 </script>
 </body>
