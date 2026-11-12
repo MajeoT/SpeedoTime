@@ -68,10 +68,11 @@
   input[type=number], select { width: 100%; min-width: 0; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 10px; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
   select { width: auto; min-width: 64px; }
-  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   input[type=range] { width: 100%; margin-top: 10px; }
   #range-a, #speed-a { accent-color: var(--a); }
   #range-b, #speed-b { accent-color: var(--b); }
+  #range-d { accent-color: var(--accent); }
 
   .results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
   @media (max-width: 560px) { .results { grid-template-columns: 1fr; } }
@@ -153,8 +154,8 @@
       <circle cx="200" cy="215" r="4" fill="#111"/>
     </svg>
     <div class="legend">
-      <span><i style="background:var(--a)"></i>Speed A</span>
-      <span><i style="background:var(--b)"></i>Speed B</span>
+      <span><i style="background:var(--a)"></i>Speed A (faster)</span>
+      <span><i style="background:var(--b)"></i>Speed B (slower)</span>
       <span><i style="background:var(--good)"></i>Gap between them</span>
       <span><i style="background:var(--accent)"></i>Trip time at that speed</span>
     </div>
@@ -170,14 +171,15 @@
           <option value="km">km</option>
         </select>
       </div>
+      <input id="range-d" type="range" min="0" max="1000" step="1" aria-label="Distance slider">
     </div>
     <div class="field">
-      <label for="speed-a"><span class="dot" style="background:var(--a)"></span>Speed A (mph)</label>
+      <label for="speed-a"><span class="dot" style="background:var(--a)"></span>Speed A · faster (mph)</label>
       <input id="speed-a" type="number" min="0" max="150" step="1" value="80" inputmode="numeric">
       <input id="range-a" type="range" min="0" max="150" step="1" value="80" aria-label="Speed A slider">
     </div>
     <div class="field">
-      <label for="speed-b"><span class="dot" style="background:var(--b)"></span>Speed B (mph)</label>
+      <label for="speed-b"><span class="dot" style="background:var(--b)"></span>Speed B · slower (mph)</label>
       <input id="speed-b" type="number" min="0" max="150" step="1" value="70" inputmode="numeric">
       <input id="range-b" type="range" min="0" max="150" step="1" value="70" aria-label="Speed B slider">
     </div>
@@ -336,8 +338,10 @@
       $('lcd-saved').textContent = fmtDiff(saved);
     }
 
-    $('speed-a').value = Math.round(a); $('range-a').value = Math.round(a);
-    $('speed-b').value = Math.round(b); $('range-b').value = Math.round(b);
+    // don't overwrite a number box while someone is typing in it
+    if (document.activeElement !== $('speed-a')) $('speed-a').value = Math.round(a);
+    if (document.activeElement !== $('speed-b')) $('speed-b').value = Math.round(b);
+    $('range-a').value = Math.round(a); $('range-b').value = Math.round(b);
     renderTable(lo);
   }
 
@@ -364,16 +368,35 @@
     state.miles = v > 0 ? ($('dist-unit').value === 'km' ? v / KM_PER_MI : v) : 0;
   }
 
+  // Distance slider is logarithmic (1 to 2000) so short and long trips both get room.
+  const D_MIN = 1, D_MAX = 2000;
+  const sliderToDist = x => {
+    const v = D_MIN * Math.pow(D_MAX / D_MIN, x / 1000);
+    const step = v < 20 ? 1 : v < 100 ? 5 : v < 500 ? 10 : 50;
+    return Math.round(v / step) * step;
+  };
+  const distToSlider = v => v > 0 ? clamp(Math.round(1000 * Math.log(v / D_MIN) / Math.log(D_MAX / D_MIN)), 0, 1000) : 0;
+  const syncDistSlider = () => { $('range-d').value = distToSlider(parseFloat($('distance').value)); };
+
+  // Speed B is the slower needle: it can't go above A, and A can't go below B.
+  function setSpeed(k, v) {
+    v = clamp(v, 0, MAX);
+    state[k] = k === 'a' ? Math.max(v, state.b) : Math.min(v, state.a);
+  }
+
   // ---- inputs ----
   const onDist = () => { readDistance(); renderTimes(); render(); save(); };
-  $('distance').addEventListener('input', onDist);
+  $('distance').addEventListener('input', () => { syncDistSlider(); onDist(); });
   $('dist-unit').addEventListener('change', onDist);
+  $('range-d').addEventListener('input', e => { $('distance').value = sliderToDist(+e.target.value); onDist(); });
   for (const k of ['a', 'b']) {
-    $('speed-' + k).addEventListener('input', e => {
-      const v = parseFloat(e.target.value);
-      if (v >= 0) { state[k] = clamp(v, 0, MAX); render(); save(); }
+    const box = $('speed-' + k);
+    box.addEventListener('input', () => {
+      const v = parseFloat(box.value);
+      if (v >= 0) { setSpeed(k, v); render(); save(); }
     });
-    $('range-' + k).addEventListener('input', e => { state[k] = +e.target.value; render(); save(); });
+    box.addEventListener('change', () => { box.blur(); render(); });   // show the clamped value when done typing
+    $('range-' + k).addEventListener('input', e => { setSpeed(k, +e.target.value); render(); save(); });
   }
 
   // ---- drag the needles: grab whichever is closest to where you touch ----
@@ -390,12 +413,25 @@
   svg.addEventListener('pointerdown', e => {
     const s = speedFromEvent(e);
     const da = Math.abs(s - state.a), db = Math.abs(s - state.b);
-    // if the needles overlap, pick by direction later; default to A
-    active = da < db ? 'a' : db < da ? 'b' : (s >= state.a ? 'a' : 'b');
     svg.classList.add('dragging'); svg.setPointerCapture(e.pointerId);
-    state[active] = s; render();
+    if (state.a === state.b) {
+      // needles on top of each other: wait to see which way you drag (up = A, down = B)
+      active = 'pending'; pendingFrom = s;
+      return;
+    }
+    active = da <= db ? 'a' : 'b';
+    setSpeed(active, s); render();
   });
-  svg.addEventListener('pointermove', e => { if (active) { state[active] = speedFromEvent(e); render(); } });
+  let pendingFrom = 0;
+  svg.addEventListener('pointermove', e => {
+    if (!active) return;
+    const s = speedFromEvent(e);
+    if (active === 'pending') {
+      if (s === pendingFrom) return;
+      active = s > pendingFrom ? 'a' : 'b';
+    }
+    setSpeed(active, s); render();
+  });
   const end = () => { if (active) { active = null; svg.classList.remove('dragging'); save(); } };
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
@@ -412,10 +448,11 @@
       const a = saved.a ?? saved.s;            // older versions stored s (speed) and b (baseline)
       if (a >= 0) state.a = clamp(a, 0, MAX);
       if (saved.b >= 0) state.b = clamp(saved.b, 0, MAX);
+      if (state.b > state.a) [state.a, state.b] = [state.b, state.a];
     }
   } catch {}
 
-  readDistance(); renderTimes(); render();
+  readDistance(); syncDistSlider(); renderTimes(); render();
 
   // ---- install as an app ----
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {

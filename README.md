@@ -10,10 +10,10 @@ from an already high speed. Trip time is distance ÷ speed, so each extra 10 mph
 ## Features
 
 - Half-circle speedo, 0–150 mph, red line from 120 mph
-- Two draggable needles (mouse or touch), Speed A (red) and Speed B (blue); you grab whichever is closest
+- Two draggable needles (mouse or touch): Speed A (red, faster) and Speed B (blue, slower). You grab whichever is closest, and the slower needle can't pass the faster one
 - Green arc on the dial shows the gap between the two speeds, with the time saved in the centre
 - Orange ring around the dial shows trip time at every 10 mph for your distance
-- Distance in miles or km
+- Distance in miles or km, typed or set with a slider (1 to 2000, logarithmic so short and long trips both get room)
 - Trip time and arrival time for each speed, plus time saved by the faster one
 - Table of every 10 mph step with the time gained from each extra 10 mph
 - Remembers your last inputs in the browser
